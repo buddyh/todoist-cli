@@ -1,0 +1,166 @@
+# todoist-cli
+
+A fast, full-featured Todoist CLI written in Go.
+
+## Installation
+
+### From source
+
+```bash
+go install github.com/buddyh/todoist-cli/cmd/todoist@latest
+```
+
+### Build locally
+
+```bash
+git clone https://github.com/buddyh/todoist-cli
+cd todoist-cli
+make build
+./bin/todoist --help
+```
+
+## Authentication
+
+Get your API token from https://todoist.com/app/settings/integrations/developer
+
+```bash
+# Interactive
+todoist auth
+
+# Direct
+todoist auth <your-token>
+
+# Or set environment variable
+export TODOIST_API_TOKEN=<your-token>
+```
+
+## Usage
+
+### Tasks
+
+```bash
+# Show today's tasks (default)
+todoist
+
+# List all tasks
+todoist tasks --all
+
+# Filter tasks
+todoist tasks --filter "p1"        # High priority
+todoist tasks --filter "overdue"   # Overdue
+todoist tasks -p Work              # By project
+
+# Add a task
+todoist add "Buy groceries"
+todoist add "Call mom" -d tomorrow
+todoist add "Urgent" -P 1 -d "today 5pm" -l urgent
+
+# Complete a task
+todoist complete <task-id>
+todoist done <task-id>
+
+# View task details
+todoist view <task-id>
+
+# Update a task
+todoist update <task-id> --due "next monday"
+todoist update <task-id> -P 2
+
+# Delete a task
+todoist delete <task-id>
+
+# Search
+todoist search "meeting"
+```
+
+### Projects
+
+```bash
+# List projects
+todoist projects
+
+# Create project
+todoist projects add "New Project" --color blue
+```
+
+### Labels
+
+```bash
+# List labels
+todoist labels
+
+# Create label
+todoist labels add urgent --color red
+```
+
+### Sections
+
+```bash
+# List sections
+todoist sections -p Work
+
+# Create section
+todoist sections add "In Progress" -p Work
+```
+
+### Comments
+
+```bash
+# View comments on a task
+todoist comment <task-id>
+
+# Add a comment
+todoist comment <task-id> "This is a note"
+```
+
+### Completed Tasks
+
+```bash
+# Show recently completed
+todoist completed
+
+# Filter by date
+todoist completed --since 2024-01-01 --limit 50
+```
+
+## JSON Output
+
+All commands support `--json` for machine-readable output:
+
+```bash
+todoist tasks --json | jq '.[] | .content'
+```
+
+## Command Reference
+
+| Command | Description |
+|---------|-------------|
+| `todoist` | Show today's tasks |
+| `todoist tasks` | List tasks with filters |
+| `todoist add` | Create a new task |
+| `todoist complete` | Mark task complete |
+| `todoist done` | Alias for complete |
+| `todoist delete` | Delete a task |
+| `todoist update` | Update a task |
+| `todoist view` | View task details |
+| `todoist search` | Search tasks |
+| `todoist projects` | List/manage projects |
+| `todoist labels` | List/manage labels |
+| `todoist sections` | List/manage sections |
+| `todoist comment` | View/add comments |
+| `todoist completed` | Show completed tasks |
+| `todoist reopen` | Reopen completed task |
+| `todoist auth` | Authenticate |
+
+## Priority Mapping
+
+| CLI | Todoist |
+|-----|---------|
+| `-P 1` | p1 (highest) |
+| `-P 2` | p2 |
+| `-P 3` | p3 |
+| `-P 4` | p4 (lowest) |
+
+## License
+
+MIT

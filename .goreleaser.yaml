@@ -1,0 +1,55 @@
+version: 2
+
+project_name: todoist
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/todoist
+    binary: todoist
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+brews:
+  - repository:
+      owner: buddyh
+      name: homebrew-tap
+    homepage: "https://github.com/buddyh/todoist-cli"
+    description: "Todoist CLI - manage tasks from the command line"
+    license: "MIT"
+    install: |
+      bin.install "todoist"
+    test: |
+      system "#{bin}/todoist", "--version"
