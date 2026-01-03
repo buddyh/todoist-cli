@@ -4,7 +4,13 @@ A fast, full-featured Todoist CLI written in Go.
 
 ## Installation
 
-### From source
+### Homebrew (macOS/Linux)
+
+```bash
+brew install buddyh/tap/todoist
+```
+
+### Go
 
 ```bash
 go install github.com/buddyh/todoist-cli/cmd/todoist@latest
