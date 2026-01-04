@@ -75,6 +75,10 @@ todoist update <task-id> -P 2
 # Delete a task
 todoist delete <task-id>
 
+# Move a task (Kanban workflows)
+todoist move <task-id> --section "In Progress"
+todoist move <task-id> --project "Work"
+
 # Search
 todoist search "meeting"
 ```
@@ -148,6 +152,7 @@ todoist tasks --json | jq '.[] | .content'
 | `todoist done` | Alias for complete |
 | `todoist delete` | Delete a task |
 | `todoist update` | Update a task |
+| `todoist move` | Move task to section/project |
 | `todoist view` | View task details |
 | `todoist search` | Search tasks |
 | `todoist projects` | List/manage projects |

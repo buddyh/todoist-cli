@@ -508,6 +508,34 @@ type CompletedTasksResponse struct {
 	Items []CompletedTask `json:"items"`
 }
 
+// MoveTask moves a task to a different section or project using the Sync API
+func (c *Client) MoveTask(taskID, sectionID, projectID string) error {
+	// Generate a UUID for the command
+	uuid := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	args := map[string]string{"id": taskID}
+	if sectionID != "" {
+		args["section_id"] = sectionID
+	} else if projectID != "" {
+		args["project_id"] = projectID
+	}
+
+	commands := []map[string]interface{}{
+		{
+			"type": "item_move",
+			"uuid": uuid,
+			"args": args,
+		},
+	}
+
+	params := map[string]interface{}{
+		"commands": commands,
+	}
+
+	_, err := c.request("POST", "sync", params, true)
+	return err
+}
+
 // GetCompletedTasks returns completed tasks
 func (c *Client) GetCompletedTasks(projectID, since, until string, limit int) (*CompletedTasksResponse, error) {
 	params := map[string]interface{}{

@@ -49,6 +49,7 @@ func execute(args []string) error {
 	rootCmd.AddCommand(newCompletedCmd(&flags))
 	rootCmd.AddCommand(newReopenCmd(&flags))
 	rootCmd.AddCommand(newCommentCmd(&flags))
+	rootCmd.AddCommand(newMoveCmd(&flags))
 
 	rootCmd.SetArgs(args)
 	if err := rootCmd.Execute(); err != nil {
