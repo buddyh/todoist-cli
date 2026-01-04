@@ -46,6 +46,7 @@ brews:
   - repository:
       owner: buddyh
       name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/buddyh/todoist-cli"
     description: "Todoist CLI - manage tasks from the command line"
     license: "MIT"
