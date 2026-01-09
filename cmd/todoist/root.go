@@ -26,7 +26,7 @@ func execute(args []string) error {
 		Version:       version,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Default: show today's tasks
-			return runTasks(cmd, &flags, true, "", "")
+			return runTasks(cmd, &flags, true, "", "", false)
 		},
 	}
 	rootCmd.SetVersionTemplate("todoist {{.Version}}\n")

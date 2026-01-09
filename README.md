@@ -56,6 +56,9 @@ todoist tasks --filter "p1"        # High priority
 todoist tasks --filter "overdue"   # Overdue
 todoist tasks -p Work              # By project
 
+# Show task descriptions and comments
+todoist tasks -p Work --details
+
 # Add a task
 todoist add "Buy groceries"
 todoist add "Call mom" -d tomorrow
