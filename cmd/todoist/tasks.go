@@ -64,6 +64,14 @@ func runTasks(cmd *cobra.Command, flags *rootFlags, today bool, filter, project 
 
 	// Build filter
 	if filter == "" {
+		// If project is specified and no explicit filter flags were set,
+		// default to all active tasks in that project.
+		if project != "" && cmd.Flag("today") != nil && !cmd.Flag("today").Changed &&
+			cmd.Flag("overdue") != nil && !cmd.Flag("overdue").Changed &&
+			cmd.Flag("all") != nil && !cmd.Flag("all").Changed {
+			today = false
+		}
+
 		// Check flags
 		if cmd.Flag("overdue") != nil && cmd.Flag("overdue").Changed {
 			filter = "overdue"
