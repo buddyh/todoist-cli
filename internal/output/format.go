@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/buddyh/todoist-cli/internal/api"
@@ -136,11 +137,54 @@ func (f *Formatter) WriteTasks(tasks []api.Task) error {
 		return nil
 	}
 
-	for _, t := range tasks {
-		fmt.Fprintln(f.w, FormatTaskLine(&t))
+	taskMap := make(map[string]*api.Task)
+	childrenMap := make(map[string][]*api.Task)
+
+	for i := range tasks {
+		t := &tasks[i]
+		taskMap[t.ID] = t
+		if t.ParentID != "" {
+			childrenMap[t.ParentID] = append(childrenMap[t.ParentID], t)
+		}
+	}
+
+	var roots []*api.Task
+	for i := range tasks {
+		t := &tasks[i]
+		if t.ParentID == "" {
+			roots = append(roots, t)
+		} else if _, ok := taskMap[t.ParentID]; !ok {
+			roots = append(roots, t)
+		}
+	}
+
+	sortTasks(roots)
+	for _, children := range childrenMap {
+		sortTasks(children)
+	}
+
+	for _, root := range roots {
+		f.printTaskRecursive(root, 0, childrenMap)
 	}
 
 	return nil
+}
+
+func sortTasks(tasks []*api.Task) {
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].Order < tasks[j].Order
+	})
+}
+
+func (f *Formatter) printTaskRecursive(t *api.Task, level int, childrenMap map[string][]*api.Task) {
+	indent := strings.Repeat("  ", level)
+	fmt.Fprintf(f.w, "%s%s\n", indent, FormatTaskLine(t))
+
+	if children, ok := childrenMap[t.ID]; ok {
+		for _, child := range children {
+			f.printTaskRecursive(child, level+1, childrenMap)
+		}
+	}
 }
 
 // WriteTask outputs a single task
