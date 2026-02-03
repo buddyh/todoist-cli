@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"strings"
 
 	"github.com/buddyh/todoist-cli/internal/api"
 	"github.com/buddyh/todoist-cli/internal/output"
@@ -97,19 +96,4 @@ func newReopenCmd(flags *rootFlags) *cobra.Command {
 	}
 
 	return cmd
-}
-
-// Helper for comma-separated string to slice
-func splitLabels(s string) []string {
-	if s == "" {
-		return nil
-	}
-	parts := strings.Split(s, ",")
-	result := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if t := strings.TrimSpace(p); t != "" {
-			result = append(result, t)
-		}
-	}
-	return result
 }

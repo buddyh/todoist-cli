@@ -313,7 +313,11 @@ func (f *Formatter) WriteCompletedTasks(resp *api.CompletedTasksResponse) error 
 	}
 
 	for _, t := range resp.Items {
-		fmt.Fprintf(f.w, "\033[90m%s\033[0m  \033[9m%s\033[0m\n", t.CompletedAt[:10], t.Content)
+		date := t.CompletedAt
+		if len(date) >= 10 {
+			date = date[:10]
+		}
+		fmt.Fprintf(f.w, "\033[90m%s\033[0m  \033[9m%s\033[0m\n", date, t.Content)
 	}
 
 	return nil
