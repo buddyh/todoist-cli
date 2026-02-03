@@ -18,14 +18,21 @@ type Config struct {
 }
 
 // ConfigDir returns the config directory path
-func ConfigDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, configDirName)
+func ConfigDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to determine home directory: %w", err)
+	}
+	return filepath.Join(home, configDirName), nil
 }
 
 // ConfigPath returns the full config file path
-func ConfigPath() string {
-	return filepath.Join(ConfigDir(), configFileName)
+func ConfigPath() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, configFileName), nil
 }
 
 // Load loads the configuration from disk
@@ -36,7 +43,10 @@ func Load() (*Config, error) {
 	}
 
 	// Then try config file
-	path := ConfigPath()
+	path, err := ConfigPath()
+	if err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -59,7 +69,10 @@ func Load() (*Config, error) {
 
 // Save saves the configuration to disk
 func Save(cfg *Config) error {
-	dir := ConfigDir()
+	dir, err := ConfigDir()
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create config dir: %w", err)
 	}
@@ -69,7 +82,10 @@ func Save(cfg *Config) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	path := ConfigPath()
+	path, err := ConfigPath()
+	if err != nil {
+		return err
+	}
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}

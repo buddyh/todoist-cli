@@ -59,7 +59,8 @@ You can either:
 				return err
 			}
 
-			out.WriteSuccess(fmt.Sprintf("Authenticated successfully. Config saved to %s", config.ConfigPath()))
+			configPath, _ := config.ConfigPath() // Error already handled by Save()
+			out.WriteSuccess(fmt.Sprintf("Authenticated successfully. Config saved to %s", configPath))
 			return nil
 		},
 	}
@@ -70,7 +71,10 @@ You can either:
 		Short: "Remove stored credentials",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := output.NewFormatter(os.Stdout, flags.asJSON)
-			path := config.ConfigPath()
+			path, err := config.ConfigPath()
+			if err != nil {
+				return err
+			}
 			if err := os.Remove(path); err != nil {
 				if os.IsNotExist(err) {
 					out.WriteSuccess("No credentials stored.")
