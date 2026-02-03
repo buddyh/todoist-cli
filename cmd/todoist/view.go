@@ -58,7 +58,11 @@ func newViewCmd(flags *rootFlags) *cobra.Command {
 			if err == nil && len(comments) > 0 {
 				fmt.Printf("\nComments (%d):\n", len(comments))
 				for _, c := range comments {
-					fmt.Printf("  [%s] %s\n", c.PostedAt[:10], c.Content)
+					date := c.PostedAt
+					if len(date) >= 10 {
+						date = date[:10]
+					}
+					fmt.Printf("  [%s] %s\n", date, c.Content)
 				}
 			}
 
