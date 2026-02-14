@@ -689,8 +689,8 @@ func (c *Client) MoveTask(taskID, sectionID, projectID string) error {
 
 // GetCompletedTasks returns completed tasks
 func (c *Client) GetCompletedTasks(projectID, since, until string, limit int) (*CompletedTasksResponse, error) {
-	params := map[string]interface{}{
-		"limit": limit,
+	params := map[string]string{
+		"limit": strconv.Itoa(limit),
 	}
 	if projectID != "" {
 		params["project_id"] = projectID
@@ -702,7 +702,7 @@ func (c *Client) GetCompletedTasks(projectID, since, until string, limit int) (*
 		params["until"] = until
 	}
 
-	resp, err := c.request("POST", "completed/get_all", params)
+	resp, err := c.request("GET", "tasks/completed", params)
 	if err != nil {
 		return nil, err
 	}
