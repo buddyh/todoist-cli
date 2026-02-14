@@ -2,24 +2,46 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
+
+	clerrors "github.com/buddyh/todoist-cli/internal/errors"
 )
 
 const (
-	BaseURL = "https://api.todoist.com/rest/v2"
-	SyncURL = "https://api.todoist.com/sync/v9"
+	BaseURL    = "https://api.todoist.com/api/v1"
+	maxRetries = 3
 )
+
+// paginatedResponse wraps list endpoints that return cursor-paginated results.
+type paginatedResponse struct {
+	Results    json.RawMessage `json:"results"`
+	NextCursor *string        `json:"next_cursor"`
+}
+
+// unmarshalList parses a paginated API response, extracting the results array
+// into the target slice. Falls back to direct unmarshal for non-paginated responses.
+func unmarshalList(data []byte, v interface{}) error {
+	var page paginatedResponse
+	if err := json.Unmarshal(data, &page); err == nil && page.Results != nil {
+		return json.Unmarshal(page.Results, v)
+	}
+	return json.Unmarshal(data, v)
+}
 
 // Client is a Todoist API client
 type Client struct {
 	token      string
 	httpClient *http.Client
+	debug      bool
 }
 
 // NewClient creates a new Todoist API client
@@ -32,16 +54,21 @@ func NewClient(token string) *Client {
 	}
 }
 
+// SetDebug enables HTTP request/response tracing to stderr.
+func (c *Client) SetDebug(enabled bool) {
+	c.debug = enabled
+}
+
 // request makes an authenticated request to the Todoist API
-func (c *Client) request(method, endpoint string, data interface{}, sync bool) ([]byte, error) {
-	baseURL := BaseURL
-	if sync {
-		baseURL = SyncURL
-	}
+func (c *Client) request(method, endpoint string, data interface{}) ([]byte, error) {
+	return c.requestCtx(context.Background(), method, endpoint, data)
+}
 
-	reqURL := fmt.Sprintf("%s/%s", baseURL, endpoint)
+// requestCtx makes an authenticated request with context support and retry logic.
+func (c *Client) requestCtx(ctx context.Context, method, endpoint string, data interface{}) ([]byte, error) {
+	reqURL := fmt.Sprintf("%s/%s", BaseURL, endpoint)
 
-	var body io.Reader
+	var bodyBytes []byte
 	if data != nil {
 		if method == "GET" {
 			// For GET, encode as query params
@@ -58,38 +85,108 @@ func (c *Client) request(method, endpoint string, data interface{}, sync bool) (
 			}
 		} else {
 			// For POST/DELETE, encode as JSON body
-			jsonData, err := json.Marshal(data)
+			var err error
+			bodyBytes, err = json.Marshal(data)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal request: %w", err)
 			}
-			body = bytes.NewReader(jsonData)
 		}
 	}
 
-	req, err := http.NewRequest(method, reqURL, body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			// Wait before retry
+			if lastErr != nil {
+				if waitErr, ok := lastErr.(*retryAfterError); ok {
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-time.After(waitErr.after):
+					}
+				} else {
+					backoff := time.Duration(1<<uint(attempt-1)) * time.Second
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-time.After(backoff):
+					}
+				}
+			}
+		}
+
+		var body io.Reader
+		if bodyBytes != nil {
+			body = bytes.NewReader(bodyBytes)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, reqURL, body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
+		req.Header.Set("Content-Type", "application/json")
+
+		start := time.Now()
+		if c.debug {
+			fmt.Fprintf(os.Stderr, "[DEBUG] %s %s\n", method, reqURL)
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			if c.debug {
+				fmt.Fprintf(os.Stderr, "[DEBUG] error: %v (%s)\n", err, time.Since(start))
+			}
+			return nil, clerrors.WrapNetworkError("request failed", err)
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, clerrors.WrapNetworkError("failed to read response", err)
+		}
+
+		if c.debug {
+			fmt.Fprintf(os.Stderr, "[DEBUG] %d %s (%s)\n", resp.StatusCode, http.StatusText(resp.StatusCode), time.Since(start))
+		}
+
+		if resp.StatusCode == 429 && attempt < maxRetries {
+			wait := 5 * time.Second
+			if ra := resp.Header.Get("Retry-After"); ra != "" {
+				if secs, err := strconv.Atoi(ra); err == nil {
+					wait = time.Duration(secs) * time.Second
+				}
+			}
+			lastErr = &retryAfterError{after: wait}
+			if c.debug {
+				fmt.Fprintf(os.Stderr, "[DEBUG] rate limited, retrying in %s\n", wait)
+			}
+			continue
+		}
+
+		if resp.StatusCode >= 400 {
+			apiErr := fmt.Errorf("API error (%d): %s", resp.StatusCode, string(respBody))
+			switch resp.StatusCode {
+			case 401, 403:
+				return nil, clerrors.WrapAuthError("authentication failed", apiErr)
+			default:
+				return nil, apiErr
+			}
+		}
+
+		return respBody, nil
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
-	req.Header.Set("Content-Type", "application/json")
+	return nil, fmt.Errorf("max retries exceeded: %w", lastErr)
+}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
+type retryAfterError struct {
+	after time.Duration
+}
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, string(respBody))
-	}
-
-	return respBody, nil
+func (e *retryAfterError) Error() string {
+	return fmt.Sprintf("rate limited, retry after %s", e.after)
 }
 
 // =============================================================================
@@ -140,13 +237,13 @@ func (c *Client) GetTasks(projectID, filter string) ([]Task, error) {
 		data = params
 	}
 
-	resp, err := c.request("GET", "tasks", data, false)
+	resp, err := c.request("GET", "tasks", data)
 	if err != nil {
 		return nil, err
 	}
 
 	var tasks []Task
-	if err := json.Unmarshal(resp, &tasks); err != nil {
+	if err := unmarshalList(resp, &tasks); err != nil {
 		return nil, fmt.Errorf("failed to parse tasks: %w", err)
 	}
 
@@ -155,7 +252,7 @@ func (c *Client) GetTasks(projectID, filter string) ([]Task, error) {
 
 // GetTask returns a single task by ID
 func (c *Client) GetTask(taskID string) (*Task, error) {
-	resp, err := c.request("GET", fmt.Sprintf("tasks/%s", taskID), nil, false)
+	resp, err := c.request("GET", fmt.Sprintf("tasks/%s", taskID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -177,12 +274,14 @@ type AddTaskParams struct {
 	Priority    int      `json:"priority,omitempty"`
 	ProjectID   string   `json:"project_id,omitempty"`
 	SectionID   string   `json:"section_id,omitempty"`
+	ParentID    string   `json:"parent_id,omitempty"`
 	Labels      []string `json:"labels,omitempty"`
+	AssigneeID  string   `json:"assignee_id,omitempty"`
 }
 
 // AddTask creates a new task
 func (c *Client) AddTask(params AddTaskParams) (*Task, error) {
-	resp, err := c.request("POST", "tasks", params, false)
+	resp, err := c.request("POST", "tasks", params)
 	if err != nil {
 		return nil, err
 	}
@@ -203,11 +302,12 @@ type UpdateTaskParams struct {
 	DueDate     string   `json:"due_date,omitempty"`
 	Priority    int      `json:"priority,omitempty"`
 	Labels      []string `json:"labels,omitempty"`
+	AssigneeID  string   `json:"assignee_id,omitempty"`
 }
 
 // UpdateTask updates an existing task
 func (c *Client) UpdateTask(taskID string, params UpdateTaskParams) (*Task, error) {
-	resp, err := c.request("POST", fmt.Sprintf("tasks/%s", taskID), params, false)
+	resp, err := c.request("POST", fmt.Sprintf("tasks/%s", taskID), params)
 	if err != nil {
 		return nil, err
 	}
@@ -222,19 +322,43 @@ func (c *Client) UpdateTask(taskID string, params UpdateTaskParams) (*Task, erro
 
 // CompleteTask marks a task as complete
 func (c *Client) CompleteTask(taskID string) error {
-	_, err := c.request("POST", fmt.Sprintf("tasks/%s/close", taskID), nil, false)
+	_, err := c.request("POST", fmt.Sprintf("tasks/%s/close", taskID), nil)
 	return err
 }
 
 // ReopenTask reopens a completed task
 func (c *Client) ReopenTask(taskID string) error {
-	_, err := c.request("POST", fmt.Sprintf("tasks/%s/reopen", taskID), nil, false)
+	_, err := c.request("POST", fmt.Sprintf("tasks/%s/reopen", taskID), nil)
 	return err
 }
 
 // DeleteTask permanently deletes a task
 func (c *Client) DeleteTask(taskID string) error {
-	_, err := c.request("DELETE", fmt.Sprintf("tasks/%s", taskID), nil, false)
+	_, err := c.request("DELETE", fmt.Sprintf("tasks/%s", taskID), nil)
+	return err
+}
+
+// ReorderTask sets the order of a task using the Sync API
+func (c *Client) ReorderTask(taskID string, order int) error {
+	uuid := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	commands := []map[string]interface{}{
+		{
+			"type": "item_reorder",
+			"uuid": uuid,
+			"args": map[string]interface{}{
+				"items": []map[string]interface{}{
+					{"id": taskID, "child_order": order},
+				},
+			},
+		},
+	}
+
+	params := map[string]interface{}{
+		"commands": commands,
+	}
+
+	_, err := c.request("POST", "sync", params)
 	return err
 }
 
@@ -260,13 +384,13 @@ type Project struct {
 
 // GetProjects returns all projects
 func (c *Client) GetProjects() ([]Project, error) {
-	resp, err := c.request("GET", "projects", nil, false)
+	resp, err := c.request("GET", "projects", nil)
 	if err != nil {
 		return nil, err
 	}
 
 	var projects []Project
-	if err := json.Unmarshal(resp, &projects); err != nil {
+	if err := unmarshalList(resp, &projects); err != nil {
 		return nil, fmt.Errorf("failed to parse projects: %w", err)
 	}
 
@@ -275,7 +399,7 @@ func (c *Client) GetProjects() ([]Project, error) {
 
 // GetProject returns a single project by ID
 func (c *Client) GetProject(projectID string) (*Project, error) {
-	resp, err := c.request("GET", fmt.Sprintf("projects/%s", projectID), nil, false)
+	resp, err := c.request("GET", fmt.Sprintf("projects/%s", projectID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +438,7 @@ type AddProjectParams struct {
 
 // AddProject creates a new project
 func (c *Client) AddProject(params AddProjectParams) (*Project, error) {
-	resp, err := c.request("POST", "projects", params, false)
+	resp, err := c.request("POST", "projects", params)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +453,7 @@ func (c *Client) AddProject(params AddProjectParams) (*Project, error) {
 
 // DeleteProject deletes a project
 func (c *Client) DeleteProject(projectID string) error {
-	_, err := c.request("DELETE", fmt.Sprintf("projects/%s", projectID), nil, false)
+	_, err := c.request("DELETE", fmt.Sprintf("projects/%s", projectID), nil)
 	return err
 }
 
@@ -352,13 +476,13 @@ func (c *Client) GetSections(projectID string) ([]Section, error) {
 		data = map[string]string{"project_id": projectID}
 	}
 
-	resp, err := c.request("GET", "sections", data, false)
+	resp, err := c.request("GET", "sections", data)
 	if err != nil {
 		return nil, err
 	}
 
 	var sections []Section
-	if err := json.Unmarshal(resp, &sections); err != nil {
+	if err := unmarshalList(resp, &sections); err != nil {
 		return nil, fmt.Errorf("failed to parse sections: %w", err)
 	}
 
@@ -372,7 +496,7 @@ func (c *Client) AddSection(name, projectID string) (*Section, error) {
 		"project_id": projectID,
 	}
 
-	resp, err := c.request("POST", "sections", params, false)
+	resp, err := c.request("POST", "sections", params)
 	if err != nil {
 		return nil, err
 	}
@@ -400,13 +524,13 @@ type Label struct {
 
 // GetLabels returns all labels
 func (c *Client) GetLabels() ([]Label, error) {
-	resp, err := c.request("GET", "labels", nil, false)
+	resp, err := c.request("GET", "labels", nil)
 	if err != nil {
 		return nil, err
 	}
 
 	var labels []Label
-	if err := json.Unmarshal(resp, &labels); err != nil {
+	if err := unmarshalList(resp, &labels); err != nil {
 		return nil, fmt.Errorf("failed to parse labels: %w", err)
 	}
 
@@ -420,7 +544,7 @@ func (c *Client) AddLabel(name, color string) (*Label, error) {
 		params["color"] = color
 	}
 
-	resp, err := c.request("POST", "labels", params, false)
+	resp, err := c.request("POST", "labels", params)
 	if err != nil {
 		return nil, err
 	}
@@ -448,6 +572,11 @@ type Comment struct {
 
 // GetComments returns comments for a task or project
 func (c *Client) GetComments(taskID, projectID string) ([]Comment, error) {
+	return c.GetCommentsCtx(context.Background(), taskID, projectID)
+}
+
+// GetCommentsCtx returns comments with context support
+func (c *Client) GetCommentsCtx(ctx context.Context, taskID, projectID string) ([]Comment, error) {
 	params := map[string]string{}
 	if taskID != "" {
 		params["task_id"] = taskID
@@ -455,13 +584,13 @@ func (c *Client) GetComments(taskID, projectID string) ([]Comment, error) {
 		params["project_id"] = projectID
 	}
 
-	resp, err := c.request("GET", "comments", params, false)
+	resp, err := c.requestCtx(ctx, "GET", "comments", params)
 	if err != nil {
 		return nil, err
 	}
 
 	var comments []Comment
-	if err := json.Unmarshal(resp, &comments); err != nil {
+	if err := unmarshalList(resp, &comments); err != nil {
 		return nil, fmt.Errorf("failed to parse comments: %w", err)
 	}
 
@@ -477,7 +606,7 @@ func (c *Client) AddComment(content, taskID, projectID string) (*Comment, error)
 		params["project_id"] = projectID
 	}
 
-	resp, err := c.request("POST", "comments", params, false)
+	resp, err := c.request("POST", "comments", params)
 	if err != nil {
 		return nil, err
 	}
@@ -488,6 +617,32 @@ func (c *Client) AddComment(content, taskID, projectID string) (*Comment, error)
 	}
 
 	return &comment, nil
+}
+
+// =============================================================================
+// COLLABORATORS
+// =============================================================================
+
+// Collaborator represents a project collaborator
+type Collaborator struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+// GetCollaborators returns collaborators for a project
+func (c *Client) GetCollaborators(projectID string) ([]Collaborator, error) {
+	resp, err := c.request("GET", fmt.Sprintf("projects/%s/collaborators", projectID), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var collaborators []Collaborator
+	if err := unmarshalList(resp, &collaborators); err != nil {
+		return nil, fmt.Errorf("failed to parse collaborators: %w", err)
+	}
+
+	return collaborators, nil
 }
 
 // =============================================================================
@@ -532,7 +687,7 @@ func (c *Client) MoveTask(taskID, sectionID, projectID string) error {
 		"commands": commands,
 	}
 
-	_, err := c.request("POST", "sync", params, true)
+	_, err := c.request("POST", "sync", params)
 	return err
 }
 
@@ -551,7 +706,7 @@ func (c *Client) GetCompletedTasks(projectID, since, until string, limit int) (*
 		params["until"] = until
 	}
 
-	resp, err := c.request("POST", "completed/get_all", params, true)
+	resp, err := c.request("POST", "completed/get_all", params)
 	if err != nil {
 		return nil, err
 	}
