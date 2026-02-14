@@ -56,6 +56,12 @@ todoist tasks --filter "p1"        # High priority
 todoist tasks --filter "overdue"   # Overdue
 todoist tasks -p Work              # By project
 
+# Sort tasks
+todoist tasks --sort priority      # By priority (highest first)
+todoist tasks --sort due           # By due date
+todoist tasks --sort name          # Alphabetical
+todoist tasks --sort created       # By creation date
+
 # Show task descriptions and comments
 todoist tasks -p Work --details
 
@@ -63,6 +69,16 @@ todoist tasks -p Work --details
 todoist add "Buy groceries"
 todoist add "Call mom" -d tomorrow
 todoist add "Urgent" -P 1 -d "today 5pm" -l urgent
+
+# Subtasks
+todoist add "Subtask" --parent <task-id>
+
+# Position control
+todoist add "Top priority" --top
+todoist add "Second item" --order 2
+
+# Assign to collaborator
+todoist add "Review PR" -p Work --assignee "John"
 
 # Complete a task
 todoist complete <task-id>
@@ -74,6 +90,7 @@ todoist view <task-id>
 # Update a task
 todoist update <task-id> --due "next monday"
 todoist update <task-id> -P 2
+todoist update <task-id> --assignee "Jane"
 
 # Delete a task
 todoist delete <task-id>
@@ -126,6 +143,13 @@ todoist comment <task-id>
 todoist comment <task-id> "This is a note"
 ```
 
+### Collaborators
+
+```bash
+# List project collaborators
+todoist collaborators -p Work
+```
+
 ### Completed Tasks
 
 ```bash
@@ -136,12 +160,46 @@ todoist completed
 todoist completed --since 2024-01-01 --limit 50
 ```
 
+### Configuration
+
+```bash
+# Show config (masked token, path, source)
+todoist config
+
+# Validate API connection
+todoist config --validate
+```
+
+## Shell Completion
+
+```bash
+# Bash
+source <(todoist completion bash)
+
+# Zsh
+source <(todoist completion zsh)
+
+# Fish
+todoist completion fish | source
+
+# PowerShell
+todoist completion powershell | Out-String | Invoke-Expression
+```
+
+## Global Flags
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output JSON instead of human-readable text |
+| `--color auto\|always\|never` | Control color output (respects `NO_COLOR` and `TERM=dumb`) |
+| `--debug` | Show HTTP request/response tracing on stderr |
+
 ## JSON Output
 
 All commands support `--json` for machine-readable output:
 
 ```bash
-todoist tasks --json | jq '.[] | .content'
+todoist tasks --json | jq '.data[] | .content'
 ```
 
 ## Command Reference
@@ -162,8 +220,11 @@ todoist tasks --json | jq '.[] | .content'
 | `todoist labels` | List/manage labels |
 | `todoist sections` | List/manage sections |
 | `todoist comment` | View/add comments |
+| `todoist collaborators` | List project collaborators |
 | `todoist completed` | Show completed tasks |
 | `todoist reopen` | Reopen completed task |
+| `todoist config` | Show configuration |
+| `todoist completion` | Generate shell completions |
 | `todoist auth` | Authenticate |
 
 ## Priority Mapping
@@ -174,6 +235,16 @@ todoist tasks --json | jq '.[] | .content'
 | `-P 2` | p2 |
 | `-P 3` | p3 |
 | `-P 4` | p4 (lowest) |
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Usage error |
+| 3 | Authentication error |
+| 4 | Network error |
 
 ## License
 
