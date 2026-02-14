@@ -21,11 +21,22 @@ type Envelope struct {
 type Formatter struct {
 	w      io.Writer
 	asJSON bool
+	color  *Color
 }
 
 // NewFormatter creates a new output formatter
 func NewFormatter(w io.Writer, asJSON bool) *Formatter {
-	return &Formatter{w: w, asJSON: asJSON}
+	return &Formatter{w: w, asJSON: asJSON, color: NewColor(ColorAuto)}
+}
+
+// NewFormatterWithColor creates a formatter with explicit color control
+func NewFormatterWithColor(w io.Writer, asJSON bool, mode ColorMode) *Formatter {
+	return &Formatter{w: w, asJSON: asJSON, color: NewColor(mode)}
+}
+
+// Color returns the formatter's Color for external use.
+func (f *Formatter) Color() *Color {
+	return f.color
 }
 
 // JSON outputs data wrapped in envelope
@@ -74,31 +85,28 @@ func priorityString(p int) string {
 	}
 }
 
-// priorityColor returns ANSI color for priority
-func priorityColor(p int) string {
+// priorityColorCode returns ANSI color code for priority
+func priorityColorCode(p int) string {
 	switch p {
 	case 4:
-		return "\033[31m" // red
+		return ANSIRed
 	case 3:
-		return "\033[33m" // yellow
+		return ANSIYellow
 	case 2:
-		return "\033[34m" // blue
+		return ANSIBlue
 	default:
 		return ""
 	}
 }
 
-const colorReset = "\033[0m"
-
 // FormatTask formats a single task for human output
-func FormatTask(t *api.Task) string {
+func (f *Formatter) FormatTask(t *api.Task) string {
 	var parts []string
 
 	// Priority indicator
-	pColor := priorityColor(t.Priority)
 	pStr := priorityString(t.Priority)
 	if pStr != "" {
-		parts = append(parts, fmt.Sprintf("%s[%s]%s", pColor, pStr, colorReset))
+		parts = append(parts, f.color.Wrap(priorityColorCode(t.Priority), "["+pStr+"]"))
 	}
 
 	// Task content
@@ -110,20 +118,20 @@ func FormatTask(t *api.Task) string {
 		if dueStr == "" {
 			dueStr = t.Due.Date
 		}
-		parts = append(parts, fmt.Sprintf("\033[90m(%s)\033[0m", dueStr))
+		parts = append(parts, f.color.Wrap(ANSIGray, "("+dueStr+")"))
 	}
 
 	// Labels
 	if len(t.Labels) > 0 {
-		parts = append(parts, fmt.Sprintf("\033[36m@%s\033[0m", strings.Join(t.Labels, " @")))
+		parts = append(parts, f.color.Wrap(ANSICyan, "@"+strings.Join(t.Labels, " @")))
 	}
 
 	return strings.Join(parts, " ")
 }
 
 // FormatTaskLine formats a task as a single line with ID
-func FormatTaskLine(t *api.Task) string {
-	return fmt.Sprintf("\033[90m%s\033[0m  %s", t.ID, FormatTask(t))
+func (f *Formatter) FormatTaskLine(t *api.Task) string {
+	return f.color.Wrap(ANSIGray, t.ID) + "  " + f.FormatTask(t)
 }
 
 // WriteTasks outputs a list of tasks
@@ -172,13 +180,13 @@ func (f *Formatter) WriteTasks(tasks []api.Task) error {
 
 func sortTasks(tasks []*api.Task) {
 	sort.Slice(tasks, func(i, j int) bool {
-		return tasks[i].Order < tasks[j].Order
+		return tasks[i].ChildOrder < tasks[j].ChildOrder
 	})
 }
 
 func (f *Formatter) printTaskRecursive(t *api.Task, level int, childrenMap map[string][]*api.Task) {
 	indent := strings.Repeat("  ", level)
-	fmt.Fprintf(f.w, "%s%s\n", indent, FormatTaskLine(t))
+	fmt.Fprintf(f.w, "%s%s\n", indent, f.FormatTaskLine(t))
 
 	if children, ok := childrenMap[t.ID]; ok {
 		for _, child := range children {
@@ -193,16 +201,16 @@ func (f *Formatter) WriteTask(t *api.Task) error {
 		return f.JSON(t)
 	}
 
-	fmt.Fprintln(f.w, FormatTaskLine(t))
+	fmt.Fprintln(f.w, f.FormatTaskLine(t))
 	if t.Description != "" {
-		fmt.Fprintf(f.w, "    \033[90m%s\033[0m\n", t.Description)
+		fmt.Fprintf(f.w, "    %s\n", f.color.Wrap(ANSIGray, t.Description))
 	}
 
 	return nil
 }
 
 // FormatProject formats a project for human output
-func FormatProject(p *api.Project) string {
+func (f *Formatter) FormatProject(p *api.Project) string {
 	var markers []string
 	if p.IsFavorite {
 		markers = append(markers, "*")
@@ -213,7 +221,7 @@ func FormatProject(p *api.Project) string {
 
 	result := p.Name
 	if len(markers) > 0 {
-		result = fmt.Sprintf("%s \033[90m[%s]\033[0m", result, strings.Join(markers, ", "))
+		result = fmt.Sprintf("%s %s", result, f.color.Wrap(ANSIGray, "["+strings.Join(markers, ", ")+"]"))
 	}
 
 	return result
@@ -231,7 +239,7 @@ func (f *Formatter) WriteProjects(projects []api.Project) error {
 	}
 
 	for _, p := range projects {
-		fmt.Fprintf(f.w, "\033[90m%s\033[0m  %s\n", p.ID, FormatProject(&p))
+		fmt.Fprintf(f.w, "%s  %s\n", f.color.Wrap(ANSIGray, p.ID), f.FormatProject(&p))
 	}
 
 	return nil
@@ -243,7 +251,7 @@ func (f *Formatter) WriteProject(p *api.Project) error {
 		return f.JSON(p)
 	}
 
-	fmt.Fprintf(f.w, "\033[90m%s\033[0m  %s\n", p.ID, FormatProject(p))
+	fmt.Fprintf(f.w, "%s  %s\n", f.color.Wrap(ANSIGray, p.ID), f.FormatProject(p))
 	return nil
 }
 
@@ -259,7 +267,7 @@ func (f *Formatter) WriteLabels(labels []api.Label) error {
 	}
 
 	for _, l := range labels {
-		fmt.Fprintf(f.w, "\033[90m%s\033[0m  \033[36m@%s\033[0m\n", l.ID, l.Name)
+		fmt.Fprintf(f.w, "%s  %s\n", f.color.Wrap(ANSIGray, l.ID), f.color.Wrap(ANSICyan, "@"+l.Name))
 	}
 
 	return nil
@@ -277,7 +285,7 @@ func (f *Formatter) WriteSections(sections []api.Section) error {
 	}
 
 	for _, s := range sections {
-		fmt.Fprintf(f.w, "\033[90m%s\033[0m  %s\n", s.ID, s.Name)
+		fmt.Fprintf(f.w, "%s  %s\n", f.color.Wrap(ANSIGray, s.ID), s.Name)
 	}
 
 	return nil
@@ -295,7 +303,25 @@ func (f *Formatter) WriteComments(comments []api.Comment) error {
 	}
 
 	for _, c := range comments {
-		fmt.Fprintf(f.w, "\033[90m%s\033[0m  %s\n", c.PostedAt, c.Content)
+		fmt.Fprintf(f.w, "%s  %s\n", f.color.Wrap(ANSIGray, c.PostedAt), c.Content)
+	}
+
+	return nil
+}
+
+// WriteCollaborators outputs a list of project collaborators
+func (f *Formatter) WriteCollaborators(collaborators []api.Collaborator) error {
+	if f.asJSON {
+		return f.JSON(collaborators)
+	}
+
+	if len(collaborators) == 0 {
+		fmt.Fprintln(f.w, "No collaborators found.")
+		return nil
+	}
+
+	for _, c := range collaborators {
+		fmt.Fprintf(f.w, "%s  %s %s\n", f.color.Wrap(ANSIGray, c.ID), c.Name, f.color.Wrap(ANSIGray, "<"+c.Email+">"))
 	}
 
 	return nil
@@ -313,7 +339,7 @@ func (f *Formatter) WriteCompletedTasks(resp *api.CompletedTasksResponse) error 
 	}
 
 	for _, t := range resp.Items {
-		fmt.Fprintf(f.w, "\033[90m%s\033[0m  \033[9m%s\033[0m\n", t.CompletedAt[:10], t.Content)
+		fmt.Fprintf(f.w, "%s  %s\n", f.color.Wrap(ANSIGray, t.CompletedAt[:10]), f.color.Wrap(ANSIStrike, t.Content))
 	}
 
 	return nil

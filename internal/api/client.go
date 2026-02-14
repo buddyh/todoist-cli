@@ -201,16 +201,15 @@ type Task struct {
 	ProjectID   string   `json:"project_id"`
 	SectionID   string   `json:"section_id,omitempty"`
 	ParentID    string   `json:"parent_id,omitempty"`
-	Order       int      `json:"order"`
+	ChildOrder  int      `json:"child_order"`
 	Priority    int      `json:"priority"`
 	Due         *Due     `json:"due,omitempty"`
-	URL         string   `json:"url"`
 	Labels      []string `json:"labels"`
-	CreatedAt   string   `json:"created_at"`
-	CreatorID   string   `json:"creator_id"`
-	Assignee    string   `json:"assignee_id,omitempty"`
-	Assigner    string   `json:"assigner_id,omitempty"`
-	IsCompleted bool     `json:"is_completed"`
+	CreatedAt   string   `json:"added_at"`
+	CreatorID   string   `json:"added_by_uid"`
+	Assignee    string   `json:"responsible_uid,omitempty"`
+	Assigner    string   `json:"assigned_by_uid,omitempty"`
+	IsCompleted bool     `json:"checked"`
 }
 
 // Due represents a task due date
@@ -372,14 +371,11 @@ type Project struct {
 	Name           string `json:"name"`
 	Color          string `json:"color"`
 	ParentID       string `json:"parent_id,omitempty"`
-	Order          int    `json:"order"`
-	CommentCount   int    `json:"comment_count"`
+	ChildOrder     int    `json:"child_order"`
 	IsShared       bool   `json:"is_shared"`
 	IsFavorite     bool   `json:"is_favorite"`
-	IsInboxProject bool   `json:"is_inbox_project"`
-	IsTeamInbox    bool   `json:"is_team_inbox"`
+	IsInboxProject bool   `json:"inbox_project"`
 	ViewStyle      string `json:"view_style"`
-	URL            string `json:"url"`
 }
 
 // GetProjects returns all projects
@@ -463,10 +459,10 @@ func (c *Client) DeleteProject(projectID string) error {
 
 // Section represents a project section
 type Section struct {
-	ID        string `json:"id"`
-	ProjectID string `json:"project_id"`
-	Order     int    `json:"order"`
-	Name      string `json:"name"`
+	ID           string `json:"id"`
+	ProjectID    string `json:"project_id"`
+	SectionOrder int    `json:"section_order"`
+	Name         string `json:"name"`
 }
 
 // GetSections returns all sections, optionally filtered by project

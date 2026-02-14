@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"os"
 
-	"github.com/buddyh/todoist-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +13,7 @@ func newViewCmd(flags *rootFlags) *cobra.Command {
 		Short:   "View a single task in detail",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			out := output.NewFormatter(os.Stdout, flags.asJSON)
+			out := newFormatter(flags)
 			taskID := args[0]
 
 			client, err := getClient()
@@ -51,8 +49,6 @@ func newViewCmd(flags *rootFlags) *cobra.Command {
 			if len(task.Labels) > 0 {
 				fmt.Printf("Labels:   @%s\n", joinLabels(task.Labels))
 			}
-			fmt.Printf("URL:      %s\n", task.URL)
-
 			// Show comments if any
 			comments, err := client.GetComments(taskID, "")
 			if err == nil && len(comments) > 0 {
