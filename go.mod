@@ -2,7 +2,10 @@ module github.com/buddyh/todoist-cli
 
 go 1.27.3
 
-require github.com/spf13/cobra v1.8.0
+require (
+	github.com/spf13/cobra v1.8.0
+	golang.org/x/sync v0.19.0
+)
 
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
