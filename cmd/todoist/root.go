@@ -26,7 +26,7 @@ func execute(args []string) error {
 		Version:       version,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Default: show today's tasks
-			return runTasks(cmd, &flags, true, "", "", false)
+			return runTasks(cmd, &flags, true, "", "", false, "")
 		},
 	}
 	rootCmd.SetVersionTemplate("todoist {{.Version}}\n")
@@ -67,4 +67,9 @@ func getClient() (*api.Client, error) {
 		return nil, err
 	}
 	return api.NewClient(token), nil
+}
+
+// newFormatter uses the same JSON and automatic color defaults for task views.
+func newFormatter(flags *rootFlags) *output.Formatter {
+	return output.NewFormatter(os.Stdout, flags.asJSON)
 }

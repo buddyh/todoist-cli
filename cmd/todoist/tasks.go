@@ -57,7 +57,7 @@ Examples:
 func runTasks(cmd *cobra.Command, flags *rootFlags, today bool, filter, project string, details bool, sortBy string) error {
 	out := newFormatter(flags)
 
-	client, err := getClientWithFlags(flags)
+	client, err := getClient()
 	if err != nil {
 		return err
 	}
